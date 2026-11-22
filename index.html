@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SarkariResult AutoPublisher Dashboard</title>
+  <style>
+    :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#172033;background:#f4f6fb}
+    *{box-sizing:border-box}body{margin:0}
+    header{background:#101b35;color:#fff;padding:22px max(18px,calc((100% - 1120px)/2))}
+    header h1{margin:0 0 6px;font-size:23px}header p{margin:0;color:#c8d2e7;font-size:14px}
+    main{max-width:1120px;margin:24px auto;padding:0 16px}
+    .top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+    .stat,.panel,.post{background:#fff;border:1px solid #e5e9f2;border-radius:14px;padding:16px;box-shadow:0 3px 12px #16264a08}
+    .stat small{display:block;color:#68748a;margin-bottom:8px}.stat strong{font-size:25px}
+    button{border:0;border-radius:9px;padding:10px 14px;font-weight:650;cursor:pointer}
+    .primary{background:#2457d6;color:#fff}.secondary{background:#edf2ff;color:#2148a7}
+    .filter{display:flex;gap:8px;flex-wrap:wrap}.filter button{background:#eef1f7;color:#46536a}
+    .filter button.active{background:#dce7ff;color:#2047a4}
+    .meta{color:#718096;font-size:13px}.posts{display:grid;gap:12px;margin-top:14px}
+    .post-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .tag{display:inline-block;background:#eef3ff;color:#284c9c;border-radius:20px;padding:5px 9px;font-size:12px;font-weight:700}
+    .status{font-size:12px;color:#a15b12;background:#fff4df;padding:5px 9px;border-radius:20px;white-space:nowrap}
+    .status.done{color:#14733d;background:#e5f7ec}
+    .post h3{font-size:16px;line-height:1.45;margin:12px 0 8px}
+    .url{font-size:13px;word-break:break-all;color:#3159b5;text-decoration:none}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .empty{padding:30px;text-align:center;color:#69758a}
+    .notice{font-size:13px;color:#6b7485;line-height:1.5;margin-top:16px}
+    @media(max-width:600px){.stats{grid-template-columns:1fr}.post-head{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>📢 SarkariResult AutoPublisher</h1>
+  <p>Latest Jobs · Results · Admit Cards · Answer Keys · Admissions</p>
+</header>
+<main>
+  <div class="top">
+    <div>
+      <strong>Updates Dashboard</strong>
+      <div class="meta" id="lastScan">Loading status…</div>
+    </div>
+    <button class="primary" id="scanBtn" onclick="scanNow()">↻ Fetch Latest Updates</button>
+  </div>
+
+  <section class="stats">
+    <div class="stat"><small>Total updates</small><strong id="total">—</strong></div>
+    <div class="stat"><small>Not posted yet</small><strong id="pending">—</strong></div>
+    <div class="stat"><small>Refresh schedule</small><strong id="schedule">15 min</strong></div>
+  </section>
+
+  <section class="panel">
+    <div class="top" style="margin-bottom:10px">
+      <strong>All Updates</strong>
+      <div class="filter" id="filters">
+        <button class="active" data-filter="all">All</button>
+        <button data-filter="pending">Not Posted</button>
+        <button data-filter="posted">Posted</button>
+      </div>
+    </div>
+    <div class="posts" id="posts"><div class="empty">Updates load ho rahe hain…</div></div>
+  </section>
+
+  <p class="notice">
+    WhatsApp पर भेजना अभी manual है: “Copy WhatsApp Message” दबाएं और अपने ग्रुप में paste करें।
+    “Mark as Posted” केवल तभी दबाएं जब आपने संदेश वास्तव में भेज दिया हो।
+    आवेदन की अंतिम तिथि, पात्रता और फीस संबंधित विभाग की आधिकारिक अधिसूचना से verify करें।
+  </p>
+</main>
+<script>
+let allPosts = [];
+let currentFilter = "all";
+
+async function loadData() {
+  const response = await fetch("/api/posts");
+  const data = await response.json();
+  allPosts = data.posts || [];
+  document.getElementById("total").textContent = data.stats.total;
+  document.getElementById("pending").textContent = data.stats.pending;
+  document.getElementById("lastScan").textContent =
+    data.stats.lastScanAt ? "Last checked: " + new Date(data.stats.lastScanAt).toLocaleString() :
+    "Waiting for first scan";
+  if (data.stats.lastScanError) {
+    document.getElementById("lastScan").textContent += " · Error: " + data.stats.lastScanError;
+  }
+  renderPosts();
+}
+
+function renderPosts() {
+  const filtered = allPosts.filter(p =>
+    currentFilter === "all" ||
+    (currentFilter === "pending" && !p.published) ||
+    (currentFilter === "posted" && !!p.published)
+  );
+  const root = document.getElementById("posts");
+  if (!filtered.length) {
+    root.innerHTML = '<div class="empty">इस filter में अभी कोई update नहीं है।</div>';
+    return;
+  }
+  root.innerHTML = filtered.map(p => {
+    const encoded = btoa(unescape(encodeURIComponent(p.url))).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
+    const posted = !!p.published;
+    return `<article class="post">
+      <div class="post-head">
+        <span class="tag">${escapeHtml(p.category)}</span>
+        <span class="status ${posted ? "done" : ""}">${posted ? "✓ Posted" : "● Not Posted"}</span>
+      </div>
+      <h3>${escapeHtml(p.title)}</h3>
+      <div class="meta">${new Date(p.first_seen).toLocaleString()}</div>
+      <p><a class="url" href="${escapeAttr(p.url)}" target="_blank" rel="noopener">Open source update ↗</a></p>
+      <div class="actions">
+        <button class="secondary" onclick="copyMessage('${encoded}')">Copy WhatsApp Message</button>
+        ${posted ? "" : `<button class="secondary" onclick="markPosted('${encoded}')">Mark as Posted</button>`}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+async function copyMessage(encoded) {
+  const bytes = Uint8Array.from(atob(encoded.replace(/-/g,"+").replace(/_/g,"/")), c => c.charCodeAt(0));
+  const url = new TextDecoder().decode(bytes);
+  const post = allPosts.find(p => p.url === url);
+  if (!post) return alert("Post not found. Refresh dashboard.");
+  try {
+    await navigator.clipboard.writeText(post.message);
+    alert("WhatsApp message copied. अब अपने WhatsApp group में paste करें।");
+  } catch {
+    alert("Clipboard permission नहीं मिली। कृपया browser permission allow करें।");
+  }
+}
+
+async function markPosted(encoded) {
+  if (!confirm("क्या आपने यह update WhatsApp group में भेज दिया है?")) return;
+  const response = await fetch(`/api/posts/${encoded}/posted`, {method:"POST"});
+  if (!response.ok) return alert("Status update नहीं हो पाया।");
+  await loadData();
+}
+
+async function scanNow() {
+  const btn = document.getElementById("scanBtn");
+  btn.disabled = true; btn.textContent = "Scanning…";
+  try {
+    const response = await fetch("/api/scan", {method:"POST"});
+    const result = await response.json();
+    if (!response.ok) alert("Scan failed: " + (result.error || "Unknown error"));
+    else alert(`Scan complete. New updates: ${result.discovered}`);
+    await loadData();
+  } catch (e) { alert("Could not connect to local server: " + e.message); }
+  finally { btn.disabled = false; btn.textContent = "↻ Fetch Latest Updates"; }
+}
+
+document.getElementById("filters").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-filter]");
+  if (!btn) return;
+  currentFilter = btn.dataset.filter;
+  document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === btn));
+  renderPosts();
+});
+loadData();
+setInterval(loadData, 60000);
+</script>
+</body>
+</html>
